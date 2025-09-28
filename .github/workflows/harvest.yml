@@ -1,0 +1,147 @@
+name: AIPM GitHub Harvester
+
+on:
+  # Run nightly at 2 AM UTC
+  schedule:
+    - cron: '0 2 * * *'
+  
+  # Run on changes to repos list or config
+  pull_request:
+    paths:
+      - 'repos.txt'
+      - 'config.yaml'
+      - '.github/workflows/harvest.yml'
+  
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      repos_file:
+        description: 'Repository list file'
+        required: false
+        default: 'repos.txt'
+      output_dir:
+        description: 'Output directory'
+        required: false
+        default: 'data/registry'
+
+permissions:
+  contents: read
+  pull-requests: write  # For creating PRs with changes
+  issues: write
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          
+      - name: Create output directory
+        run: |
+          mkdir -p ${{ github.event.inputs.output_dir || 'data/registry' }}
+      
+      - name: Run AIPM Harvester
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          aipm-harvester harvest \
+            --repos-file ${{ github.event.inputs.repos_file || 'repos.txt' }} \
+            --output-dir ${{ github.event.inputs.output_dir || 'data/registry' }} \
+            --config config.yaml \
+            --format jsonl \
+            --format csv \
+            --parallel
+      
+      - name: Check for changes
+        id: changes
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Commit and push changes
+        if: steps.changes.outputs.changes == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/registry/
+          git commit -m "Update AIPM registry data - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          git push
+      
+      - name: Create Pull Request
+        if: steps.changes.outputs.changes == 'true' && github.event_name != 'pull_request'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Update AIPM registry data"
+          title: "🤖 Auto-update AIPM registry data"
+          body: |
+            ## AIPM Registry Update
+            
+            This PR contains automatically harvested AI tool metadata from the configured repositories.
+            
+            ### Changes
+            - Updated harvested metadata files
+            - Refreshed tool definitions and function signatures
+            - Updated provider and protocol information
+            
+            ### Files Updated
+            - `data/registry/harvested_metadata.jsonl`
+            - `data/registry/harvested_metadata.csv`
+            - Repository-specific files in `data/registry/repositories/`
+            - Function-specific files in `data/registry/functions/`
+            
+            This is an automated pull request created by the AIPM GitHub Harvester workflow.
+          branch: auto-update-registry
+          delete-branch: true
+          labels: |
+            automated
+            aipm-registry
+            data-update
+      
+      - name: Upload harvest artifacts
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: harvest-results
+          path: |
+            data/registry/
+            *.log
+          retention-days: 30
+      
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## AIPM Harvest Summary" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "data/registry/harvested_metadata.csv" ]; then
+            TOOL_COUNT=$(tail -n +2 data/registry/harvested_metadata.csv | wc -l)
+            echo "- **Tools extracted:** $TOOL_COUNT" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -f "data/registry/processed_repositories.csv" ]; then
+            REPO_COUNT=$(tail -n +2 data/registry/processed_repositories.csv | wc -l)
+            echo "- **Repositories processed:** $REPO_COUNT" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "- **Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workflow:** ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run ID:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
