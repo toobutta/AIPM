@@ -1,0 +1,40 @@
+output:
+  formats: ["jsonl", "csv"]
+  base_dir: "data/registry"
+
+parsing:
+  include_patterns:
+    - "docs/**"
+    - "README*"
+    - "examples/**" 
+    - "openapi/*.json"
+    - "openapi/*.yaml"
+    - "openapi/*.yml"
+    - "mcp/**"
+    - "tools/**"
+    - "*.md"
+  
+  exclude_patterns:
+    - "node_modules/**"
+    - ".git/**"
+    - "**/__pycache__/**"
+    - "**/.*"
+    - "**/*.pyc"
+    - "**/build/**"
+    - "**/dist/**"
+    - "**/venv/**"
+    - "**/.venv/**"
+
+github:
+  token: ${GITHUB_TOKEN}  # Optional for private repos
+  use_github_api: true
+  api_rate_limit_delay: 1.0
+
+processing:
+  parallel_processing: true
+  max_workers: 4
+  clone_depth: 1
+  max_file_size_mb: 10
+  timeout_seconds: 300
+  enable_caching: true
+  cache_dir: ".cache"
