@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "ai-tools-database": {
+      "command": "python",
+      "args": ["mcp_server.py"],
+      "env": {
+        "PYTHONPATH": ".",
+        "DATABASE_URL": "${DATABASE_URL}",
+        "SUPABASE_URL": "${SUPABASE_URL}",
+        "SUPABASE_ANON_KEY": "${SUPABASE_ANON_KEY}",
+        "SUPABASE_SERVICE_KEY": "${SUPABASE_SERVICE_KEY}"
+      }
+    }
+  }
+}
